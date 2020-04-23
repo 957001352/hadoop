@@ -1,0 +1,86 @@
+-- mongodb导出csv文件
+
+mongoexport --host 192.168.2.222 --port 27017 --db dev_light --collection 'light_20190917' --type csv --fields _id,order,details,nowtime,channumber,shortaddr,counttime,dealintimeofdural,dealintimeofchange,dealintimeofshunt,findpointtype,groupid,devicetype,ordertype,reservedbyte,datalength --out /home/hadoop/mongodb_data/light_20190917.csv 
+
+-- hive创建MongoDB对应的表
+drop table light_20190917;
+create table light_20190917(
+id string,
+order string,
+details map<string,string>,
+nowtime string,
+channumber string,
+shortaddr string,
+counttime string,
+dealintimeofdural string,
+dealintimeofchange string,
+dealintimeofshunt string,
+findpointtype string,
+groupid string,
+devicetype string,
+ordertype string,
+reservedbyte string,
+datalength string)
+
+row format serde 'org.apache.hadoop.hive.serde2.OpenCSVSerde' with serdeproperties (
+"separatorChar"=",",
+"quotechar"="\""
+)stored as textfile ;
+
+-- put 数据到 light_20190917 表hdfs目录下
+hadoop fs -put /home/hadoop/mongodb_data/light_20190917.csv  /user/hive/warehouse/light_v3.db/light_20190917
+
+
+-- 清除文件格式重新导出文件
+insert overwrite directory '/user/hive/warehouse/light_v3.db/light_20190917_03'
+row format delimited
+fields terminated by '|'
+select 
+id                
+,order             
+,regexp_replace(details,'\\{|\\}|\\"','')        
+,nowtime           
+,channumber        
+,shortaddr         
+,counttime         
+,dealintimeofdural 
+,dealintimeofchange
+,dealintimeofshunt 
+,findpointtype     
+,groupid           
+,devicetype        
+,ordertype         
+,reservedbyte      
+,datalength
+from light_20190917
+
+
+-- 建表关联清除格式后的数据
+CREATE TABLE light_20190917_03(
+id string,
+order string,
+details map<string,string>,
+nowtime string,
+channumber string,
+shortaddr string,
+counttime string,
+dealintimeofdural string,
+dealintimeofchange string,
+dealintimeofshunt string,
+findpointtype string,
+groupid string,
+devicetype string,
+ordertype string,
+reservedbyte string,
+datalength string
+)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '|'
+COLLECTION ITEMS TERMINATED BY ','
+MAP KEYS TERMINATED BY ":"
+STORED AS TEXTFILE
+LOCATION '/user/hive/warehouse/light_v3.db/light_20190917_03';
+
+-- 查询map字段（details）的数据
+select details['ele'],details['elv'],details['energy'], details['relay'],details['lightbright'], details['feelingstatus'], details['brightstatus'] from light_20190917_03 limit 10;
+
+selectid,order, details['ele'],details['elv'],details['energy'], details['relay'],details['lightbright'], details['feelingstatus'], details['brightstatus'] from light_20190917_03 limit 10;

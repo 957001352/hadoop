@@ -1,0 +1,238 @@
+linux 环境 sql server安装
+
+1、下载 Microsoft SQL Server Red Hat 存储库配置文件：root用户登录的不加sudo
+
+sudo curl -o /etc/yum.repos.d/mssql-server.repo https://packages.microsoft.com/config/rhel/7/mssql-server-2017.repo
+
+
+下载成功后，查看/etc/yum.repos.d文件夹下mssql-server.repo文件是正确
+baseurl：这个是非常重要的一环，表明了repositry的地址，支持ftp协议，http协议和file协议；
+enabled=0/1：只有两个值，为1时表示repositry可以获取，0表示关闭
+gpgcheck=0/1：有1和0两个选择，分别代表是否是否进行gpg校验，如果没有这一项，默认是检查的
+gpgkey=url：后面接的是gpgkey的地址，如果前面定义gpgcheck=1的话。
+
+
+2、运行以下命令，安装 SQL Server：root用户不加sudo
+
+sudo yum install -y mssql-server
+
+
+3、软件包安装完成后，运行mssql conf 安装命令并按照操作提示设置 SA 密码，并选择你的版本。（密码：Admin123456）
+
+sudo /opt/mssql/bin/mssql-conf setup
+
+（1）选择SQL版本 Dev版本（免费版）输入2
+
+（2）输入yes 确认安装
+
+（3）选择 SQL Server 的语言: 11
+
+（4）设置SQL Server管理员sa的密码（还会提示再次输入确认密码，输入即可），请确保为 SA 帐户指定强密码（最少 8 个字符，包括大写和小写字母、十进制数字和/或非字母数字符号）。（密码：Admin123456）
+
+4、配置完成后，查看验证服务是否正在运行：
+
+systemctl status mssql-server
+
+
+
+5、配置防火墙实现远程链接， 默认的 SQL Server 端口为 TCP 1433。 如果你使用FirewallD适合您的防火墙，你可以使用以下命令：
+
+sudo firewall-cmd --zone=public --add-port=1433/tcp --permanent
+
+sudo firewall-cmd --reload
+
+如果提示：FirewallD is not running 说明防火墙没有开启
+
+开启防火墙命令：
+
+systemctl start firewalld
+
+再运行以上开启1433端口的命令即可
+
+
+
+
+
+
+
+
+
+
+二、安装 SQL Server 命令行工具
+1、下载安装源。
+
+[root@CentOS7 ~]# curl -o /etc/yum.repos.d/msprod.repo https://packages.microsoft.com/config/rhel/7/prod.repo
+1
+2、安装mssql 工具与 unixODBC 开发人员包
+
+[root@CentOS7 ~]# yum update
+[root@CentOS7 ~]# yum install -y mssql-tools unixODBC-devel
+
+
+3、添加/opt/mssql-tools/bin/到环境变量
+
+[root@CentOS7 ~]# echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> /etc/profile
+
+
+三、使用sqlcmd进行本地连接
+1、使用 SQL Server 名称 (-S)，用户名 (-U) 和密码 (-P) 的参数运行 sqlcmd：
+
+[root@CentOS7 ~]# sqlcmd -S localhost -U SA -P '<YourPassword>'
+1
+但使用-P参数存在安全性问题，可以不输入-P及其后面的部分，而直接输入如下命令：
+
+[root@CentOS7 ~]# sqlcmd -S localhost -U SA
+Password:
+1
+2
+这时系统会提示你输入sa密码，输入后回车
+2、如果成功，应会显示 sqlcmd 命令提示符：1>
+
+
+
+四、创建和查询数据
+1、新建数据库：
+
+1> create database TestDB
+2> select name from sys.Databases
+3> go
+1
+2
+3
+运行结果如下：
+
+name                                                                                 
+--------------------------------------------------------------------------------------------------------------------------------
+master                                                                               
+tempdb                                                                               
+model                                                                                
+msdb                                                                                 
+TestDB                                                                               
+
+(5 rows affected)
+1
+2
+3
+4
+5
+6
+7
+8
+9
+2、插入数据 
+接下来创建一个新表 Inventory，然后插入两个新行。
+
+1> use testdb
+2> go
+已将数据库上下文更改为 "TestDB"。
+1> create table Inventory(id int, name nvarchar(50), quantity int)
+2> go
+1> insert into inventory values(1,'banana',150);
+2> insert into inventory values(2,'orange',154);
+3> go
+
+(1 rows affected)
+
+(1 rows affected)
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+3、选择数据
+
+1> select * from inventory
+2> go
+id          name                                               quantity
+----------- -------------------------------------------------- -----------
+          1 banana                                                     150
+          2 orange                                                     154
+
+(2 rows affected)
+1
+2
+3
+4
+5
+6
+7
+8
+4、退出 sqlcmd 命令提示符
+
+1> quit
+
+
+
+五、从 Windows 进行连接
+
+从Windows连接到已经安装的SQL Server的话，需要安装 SQL Server Management Studio (SSMS)。 
+官方文档里说安装完成SSMS后就可以使用powershell从命令行进行远程连接，但我始终没有办法import相关模块，再说如果需要安装SSMS的话，谁还会使用Powershell啊。
+
+可以到微软官方下载页面中下载SSMS，也可以直接使用下面这个链接：https://download.microsoft.com/download/C/3/D/C3DBFF11-C72E-429A-A861-4C316524368F/SSMS-Setup-CHS.exe 
+安装文件大约800MB，下载完成直接安装即可。
+
+运行SQL命令可以参照在本地命令行中使用sqlcmd运行的相关命令。运行结果如下图： 
+
+
+
+六、更新SQL Server
+运行如下命令：
+
+[root@CentOS7 ~]# yum update mssql-server
+1
+
+
+
+七、卸载 SQL Server
+执行如下命令：
+
+[root@CentOS7 ~]# yum remove mssql-server
+1
+删除包不会删除生成的数据库文件。 如果你想要删除的数据库文件，使用以下命令:
+
+[root@CentOS7 ~]# rm -rf /var/opt/mssql/
+1
+
+
+八、脱机安装SQL Server
+1、下载rpm包： 
+Microsoft 存储库下载目录： 
+https://packages.microsoft.com/sles/12/mssql-server-2017/ 
+执行如下命令下载安装包：
+
+[root@CentOS7 ~]# wget https://packages.microsoft.com/sles/12/mssql-server-2017/mssql-server-14.0.1000.169-2.x86_64.rpm
+1
+2、解决依赖关系:
+
+[root@CentOS7 ~]# rpm -qpR mssql-server_versionnumber.x86_64.rpm
+1
+3、安装数据库引擎：
+
+[root@CentOS7 ~]# yum localinstall mssql-server_versionnumber.x86_64.rpm
+1
+或者：
+
+[root@CentOS7 ~]# rpm -ivh mssql-server_versionnumber.x86_64.rpm
+1
+使用rpm -ivh命令可以最大程序的解决依赖关系问题。
+
+4、使用mssql-conf完成 SQL Server 安装:
+
+[root@CentOS7 ~]# /opt/mssql/bin/mssql-conf setup
+1
+剩下的步骤就和在线安装是一样的了。
+
+其他相关文档： 
+针对Redhat的无人执守安装脚本
+
+
+
+

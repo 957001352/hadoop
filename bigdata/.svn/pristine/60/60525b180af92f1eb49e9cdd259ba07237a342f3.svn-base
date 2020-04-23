@@ -1,0 +1,86 @@
+tidb单机版安装：
+原文链接：https://blog.csdn.net/zhengwei125/article/details/79744839
+
+1.下载压缩包
+wget http://download.pingcap.org/tidb-latest-linux-amd64.tar.gz
+wget http://download.pingcap.org/tidb-latest-linux-amd64.sha256
+
+2.检查文件完整性
+[root@localhost tools]# sha256sum -c tidb-latest-linux-amd64.sha256
+tidb-latest-linux-amd64.tar.gz: OK  #返回ok说明文件没问题
+
+3.解压
+tar -xzf tidb-latest-linux-amd64.tar.gz
+mv tidb-latest-linux-amd64 /usr/local
+cd /usr/local/tidb-latest-linux-amd64
+
+4.启动PD 
+[root@localhost tidb-latest-linux-amd64]# ./bin/pd-server --data-dir=/data/pd --log-file=/data/logs/pd.log &
+查看启动的进程
+[root@localhost tidb-latest-linux-amd64]# ps -ef|grep pd-server
+root      2323  894  0 15:36 pts/1    00:00:00 ./bin/pd-server --data-dir=/data/pd --log-file=/data/logs/pd.log
+root      2334  894  0 15:36 pts/1    00:00:00 grep --color=auto pd-server
+
+5.启动TiKV 
+[root@localhost tidb-latest-linux-amd64]# ./bin/tikv-server --pd="127.0.0.1:2379" --data-dir=/data/tikv --log-file=/data/logs/tikv.log &
+
+[root@localhost tidb-latest-linux-amd64]# ps -ef|grep tikv-server
+root      2357  894  1 15:37 pts/1    00:00:00 ./bin/tikv-server --pd=127.0.0.1:2379 --data-dir=/data/tikv --log-file=/data/logs/tikv.log
+root      2446  894  0 15:37 pts/1    00:00:00 grep --color=auto tikv-server
+
+6.启动TiDB 
+[root@localhost tidb-latest-linux-amd64]# ./bin/tidb-server --store=tikv --path="127.0.0.1:2379" --log-file=/data/logs/tidb.log &
+
+[root@localhost tidb-latest-linux-amd64]# ps -ef|grep tidb-server
+root      2462  894  3 15:38 pts/1    00:00:00 ./bin/tidb-server --store=tikv --path=127.0.0.1:2379 --log-file=/data/logs/tidb.log
+root      2472  894  0 15:38 pts/1    00:00:00 grep --color=auto tidb-server
+
+7.使用mysql连接TiDB 
+[root@localhost logs]# mysql -h127.0.0.1 -P4000 -uroot -Dtest 
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MySQL connection id is 1
+Server version: 5.7.10-TiDB-v2.0.0-rc.3-39-g8941ba9 MySQL Community Server (Apache License 2.0)
+
+Copyright (c) 2000, 2017, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MySQL [test]> 
+
+MySQL [test]> show databases;
++--------------------+
+| Database           |
++--------------------+
+| INFORMATION_SCHEMA |
+| PERFORMANCE_SCHEMA |
+| mysql              |
+| test               |
++--------------------+
+4 rows in set (0.00 sec)
+
+--------------------- 
+
+#kill进程
+kill -9  `pgrep -f tidb-server`   或者  kill -9 `ps -ef | grep tidb-server | grep -v grep | awk '{print $2}'`
+kill -9  `pgrep -f tikv-server` 
+kill -9  `pgrep -f pd-server` 
+或者： 
+pgrep -f tidb-server | xargs kill -9  或者  ps -ef | grep tidb-server | grep -v grep | awk '{print $2}' | xargs kill -9 
+pgrep -f tikv-server | xargs kill -9 
+pgrep -f pd-server | xargs kill -9 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+tidb部署
+

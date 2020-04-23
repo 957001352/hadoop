@@ -1,0 +1,162 @@
+PowerBI安装：
+
+手下需安装好SQL Server数据库
+
+下载地址：	
+https://www.microsoft.com/zh-CN/download/details.aspx?id=55329
+
+（1）PBIDesktopRS.msi 
+（2）PBIDesktopRS_x64.msi
+（3）PowerBIReportServer.exe
+
+一、安装 PowerBIReportServer.exe
+
+安装过程： https://blog.csdn.net/capsicum29/article/details/76358899 
+1、安装SQL Server，安装过程不用详细说明，可查找各种相应文档
+
+2、安装 Power BI Desktop (PBIDesktopRS_x64.msi) 无需描述，下一步下一步就ok
+
+3、安装PowerBI报表服务器，安装过程如下：
+
+
+配置PowerBI报表服务器
+1.点击配置报表服务器，或者在开始菜单找到 report Server configuration manager。 进行配置。
+
+2.服务账户：使用内置账户：网络服务
+
+3.web服务URL：
+ip地址：所有已分配的（建议）
+TCP端口：8081
+https不填
+
+URL：http://dhlk30:8081/ReportServer
+
+4.数据库（创建新的报表服务器数据库）
+SQL Server 名称：192.168.1.74
+数据库名称： PowerBiReportServer
+报表服务器模式：本机
+
+凭证：SQL 账户
+登录名：sa
+密码：Admin123456
+
+5.web门户URL：
+虚拟目录：Reports
+URL：http://dhlk30:8081/Reports/browse/
+
+
+二、安装 PBIDesktopRS_x64.msi
+
+Power BI Desktop (PBIDesktopRS_x64.msi) 无需描述，下一步下一步就ok
+
+三、使用 PowerBI
+
+制作可视化图表：点击文件>另存为，即可选择另存到powebi报表服务器。然后打开 http://dhlk30:8081/Reports 即可看到
+
+连接数据源：
+1.mysql数据库：
+下载安装包：https://dev.mysql.com/downloads/connector/net/
+安装 mysql-connector-net-8.0.17.msi
+
+2.下载 ssh.net.2016.1.0.nupkg （百度搜索 Renci.SshNet.dll 找不到下载链接，需Google搜索 或者翻墙出去搜索下载）
+  下载地址：https://www.nuget.org/packages/SSH.NET/  ( wget https://www.nuget.org/api/v2/package/SSH.NET/2016.1.0 )
+  下载后 使用WinRAR打开，解压其中的 ssh.net.2016.1.0.nupkg\lib\net35\Renci.SshNet.dll 至 以下目录：
+   \Microsoft Power BI Desktop RS\bin（我的全路径：D:\Program Files\Microsoft Power BI Desktop RS\bin） 目录下 
+   \Microsoft Power BI Report Server\PBIRS\PowerBI ( D:\Program Files\Microsoft Power BI Report Server\PBIRS\PowerBI )
+   \Microsoft Power BI Report Server\Shared Tools  ( D:\Program Files\Microsoft Power BI Report Server\Shared Tools )
+  
+ 上面不操作连接mysql数据源 报错
+ 
+ 
+ 3.连接impala数据源：
+ (1) 下载impala odbc驱动：
+     下载地址：https://www.cloudera.com/downloads/connectors/impala/odbc/2-6-2.html  (wget https://downloads.cloudera.com/connectors/ClouderaImpala_ODBC_2.6.2.1002/Linux/ClouderaImpalaODBC-2.6.2.1002-1.x86_64.rpm)
+     文档地址：http://www.cloudera.com/documentation/other/connectors/impala-odbc/
+ 
+ 
+ (2) 安装impala ODBC  driver
+     yum --nogpgcheck localinstall /home/tools/ClouderaImpalaODBC-2.6.2.1002-1.x86_64.rpm
+ 
+     安装完毕后的文件在：/opt/cloudera/impalaodbc 文件夹，这个文件夹包括了安装文档、lib包、配置文件演示样例。
+     ll /opt/cloudera/impalaodbc/
+ 
+ (3) 在 /etc/profile 最后加入：
+     export ODBCINI=/etc/odbc.ini
+     export ODBCSYSINI=/etc
+     export CLOUDERAIMPALAODBCINI=/etc/cloudera.impalaodbc.ini
+ (4) cp /opt/cloudera/impalaodbc/lib/64/cloudera.impalaodbc.ini  /etc/
+    修改： vi /etc/cloudera.impalaodbc.ini
+	 
+	 # Generic ODBCInstLib
+     #   iODBC
+     #ODBCInstLib=libiodbcinst.so
+     
+     #   SimbaDM / unixODBC
+     ODBCInstLib=libodbcinst.so
+  (5) 修改 vi /etc/odbc.ini
+     參照 /opt/cloudera/impalaodbc/Setup/odbc.ini ,  在/etc/odbc.ini 加入例如以下的内容：
+	 
+	 [impalaodbc]
+
+# Description: DSN Description.
+# This key is not necessary and is only to give a description of the data source.
+Description=Cloudera ODBC Driver for Impala (64-bit) DSN
+
+# Driver: The location where the ODBC driver is installed to.
+Driver=/opt/cloudera/impalaodbc/lib/64/libclouderaimpalaodbc64.so
+
+# The DriverUnicodeEncoding setting is only used for SimbaDM
+# When set to 1, SimbaDM runs in UTF-16 mode.
+# When set to 2, SimbaDM runs in UTF-8 mode.
+#DriverUnicodeEncoding=2
+
+# Values for HOST, PORT, KrbFQDN, and KrbServiceName should be set here.
+# They can also be specified on the connection string.
+HOST=192.168.1.74
+PORT=21050
+Database=default
+
+# The authentication mechanism.
+# 0 - no authentication.
+# 1 - Kerberos authentication
+# 2 - Username authentication.
+# 3 - Username/password authentication.
+# 4 - Username/password authentication with SSL.
+AuthMech=0
+
+# Kerberos related settings.
+KrbFQDN=
+KrbRealm=
+KrbServiceName=
+
+# Username/password authentication with SSL settings.
+UID=
+PWD=
+CAIssuedCertNamesMismatch=1
+TrustedCerts=/opt/cloudera/impalaodbc/lib/64/cacerts.pem
+
+# Specify the proxy user ID to use.
+#DelegationUID=
+
+# General settings
+TSaslTransportBufSize=1000
+RowsFetchedPerBlock=1000
+SocketTimeout=0
+StringColumnLength=32767
+UseNativeQuery=0
+
+ (6) 验证安装是否成功
+ 运行: isql -v impalaodbc
+ [root@h1 ~]# isql -v impalaodbc
++---------------------------------------+
+| Connected!                            |
+|                                       |
+| sql-statement                         |
+| help [tablename]                      |
+| quit                                  |
+|                                       |
++---------------------------------------+
+
+ (7) 连接配置
+  服务器：192.168.1.74:21050
+  选择不加密

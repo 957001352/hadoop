@@ -1,0 +1,508 @@
+提前安装几个软件包，所有节点上
+
+	yum -y install net-tools
+	yum -y install unzip zip
+	yum -y install psmisc    （pstree命令用）
+	yum -y install httpd  
+	yum -y install mod_ssl 
+	yum -y install python-lxml  （解决 hue是连不上的，会报错：Unexpected error. Unable to verify database connection.）
+	yum -y install perl             (perl --version 查看版本)
+
+	yum -y install gcc python-devel
+	yum -y install cyrus-sasl*
+	(impala 服务需要太， 然后重启集群的agent和集群服务)
+
+
+	yum -y install telnet-server
+	yum -y install telnet
+	yum -y install snappy-devel
+	yum -y install lzo-devel
+
+
+1. 修改hostname（所有节点）
+
+vi /etc/sysconfig/network
+NETWORKING=yes
+HOSTNAME=hadoop01
+
+重启网络服务生效：service network restart
+
+vi /etc/HOS
+
+2. 创建hadoop用户hadoop组
+
+groupadd hadoop
+useradd -g hadoop -d /home/hadoop hadoop
+passwd hadoop
+
+
+2.1 root打通SSH，设置ssh无密登陆（所有节点）
+
+
+cd ~/.ssh
+（hadoop用户需要先ssh hadoop01 一下，才会产生 .ssh 目录）
+ssh-keygen -t rsa 
+# ssh-copy-id hadoop01
+ssh-copy-id -i ~/.ssh/id_rsa.pub hadoop01
+ssh-copy-id -i ~/.ssh/id_rsa.pub hadoop02
+ssh-copy-id -i ~/.ssh/id_rsa.pub hadoop03
+
+2.2 hadoop用户设置ssh免密
+
+cd ~/.ssh
+ssh-keygen -t rsa 
+ssh-copy-id -i ~/.ssh/id_rsa.pub hadoop01
+ssh-copy-id -i ~/.ssh/id_rsa.pub hadoop02
+ssh-copy-id -i ~/.ssh/id_rsa.pub hadoop03
+
+3. 安装jdk
+rpm -ivh jdk-8u162-linux-x64.rpm
+由于是rpm包并不需要我们来配置环境变量，我们只需要配置一个全局的JAVA_HOME变量即可
+echo "JAVA_HOME=/usr/java/latest/" >> /etc/environment
+source /etc/environment
+
+4. 关闭防火墙
+
+查看防火墙状态：         firewall-cmd --state 或者 systemctl status firewalld.service
+
+停止firewall：           systemctl stop firewalld.service
+
+禁止firewall开机启动：   systemctl disable firewalld.service 
+
+
+
+5. 关闭SELinux（重启生效）（所有节点）
+
+vi /etc/selinux/config 
+SELINUX=enforcing 修改为  SELINUX=disabled
+
+重启后使用如下命令检查一下：sestatus -v
+
+
+6. 设置用户最大可打开文件数，进程数，内存占用
+使用命令：ulimit -a，查看当前系统的配置的上限，unlimited为无上限
+
+
+vi /etc/security/limits.conf
+
+添加 
+* soft nofile 65536
+* hard nofile 1024000
+* soft nproc  65536
+* hard nproc  1024000
+
+7.配置NTP时间同步服务
+
+yum -y install ntp
+ 配置NTP
+ 先将原有的ntp.conf配置文件进行备份 cp /etc/ntp.conf /etc/ntp.conf.backup（所有节点）
+ vi /etc/ntp.conf
+
+master配置：
+restrict 192.168.1.0 mask 255.255.255.0 nomodify notrap
+server 127.127.1.0
+fudge 127.127.1.0 stratum 10
+slave配置：
+server master（此处为master节点的hostname）
+
+执行命令（所有节点）
+设置开机启动:chkconfig ntpd on
+启动ntp：service ntpd start
+检查是否设置成功：chkconfig --list ntpd 其中2-5为on状态就代表成功。
+
+8. 设置swap空间
+
+Cloudera建议将交换空间设置为0，过多的交换空间会引起GC耗时的激增，所以还是关闭的为好。）
+
+执行命令 （所有节点）
+echo "vm.swappiness = 0" >> /etc/sysctl.conf
+
+9. 关闭大页面压缩
+执行命令 （所有节点）
+
+
+echo never > /sys/kernel/mm/transparent_hugepage/defrag
+echo never > /sys/kernel/mm/transparent_hugepage/enabled
+
+10. 安装mysql
+解压缩到/usr/local/ 目录下
+
+
+
+tar -zxvf mysql-5.7.24-el7-x86_64.tar.gz -C /usr/local/
+cd /usr/local/ && mv mysql-5.7.24-el7-x86_64/ mysql
+mkdir -p /usr/local/mysql/data
+
+创建mysql用户用户组及目录
+groupadd mysql
+useradd -r -s /sbin/nologin -g mysql mysql -d /usr/local/mysql
+
+修改mysql的用户目录权限
+chown -R mysql:mysql  /usr/local/mysql
+初始化mysql
+/usr/local/mysql/bin/mysqld --initialize --user=mysql --basedir=/usr/local/mysql --datadir=/usr/local/mysql/data
+
+
+修改/etc/my.cnf
+
+[mysql]
+default-character-set=utf8
+
+[mysqld]
+
+port = 3306
+basedir = /usr/local/mysql
+datadir = /usr/local/mysql/data
+
+max_connections = 1000
+max_allowed_packet = 64M
+sort_buffer_size = 32M
+join_buffer_size = 32M
+thread_cache_size = 16
+query_cache_size = 128M
+query_cache_limit = 4M
+max_heap_table_size = 128M
+
+lower_case_table_names = 1
+table_open_cache = 4096
+
+character-set-server=utf8
+init_connect='SET NAMES utf8'
+
+[mysqld_safe]
+
+sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES
+
+#
+# include all files from the config directory
+#
+!includedir /etc/my.cnf.d
+
+
+启动mysql
+/usr/local/mysql/support-files/mysql.server start
+
+进入mysql，初始化生成的密码
+mysql -uroot -p
+
+修改密码并且设置权限
+
+SET password for root@localhost = password('root');
+update mysql.user set host='%' where user='root';
+grant all privileges on *.* to 'root'@'%' identified by 'root' with grant option;
+grant all privileges on *.* to 'hadoop'@'%' identified by 'hadoop'  with grant option;
+flush privileges;
+quit;
+
+
+
+
+设置开机自启动
+cp /usr/local/mysql/support-files/mysql.server /etc/init.d/mysql
+或者  ln -s /usr/local/mysql/support-files/mysql.server /etc/init.d/mysql
+
+
+chmod +x /etc/init.d/mysql
+chkconfig --add mysql --将MySQL添加为受chkconfig管理的服务
+chkconfig --level 345 mysql on --在级别3和5上设定服务为”on”
+chkconfig --list | grep mysql
+
+mysql命令加入到环境
+ln -s /usr/local/mysql/bin/mysql /usr/bin
+
+vi /etc/profile
+export MYSQL_HOME=/usr/local/mysql
+export PATH=$PATH:${MYSQL_HOME}/bin
+
+
+重启mysql生效
+service mysql restart
+
+
+11. 创建cdh 所需数据库
+create database hive default charset utf8 collate utf8_general_ci;
+create database amon default charset utf8 collate utf8_general_ci ;
+create database hue default charset utf8 collate utf8_general_ci;
+create database oozie default charset utf8 collate utf8_general_ci;
+
+
+
+
+安装Cloudera Manager Server和 Agent
+
+主节点解压安装
+cloudera manager的目录默认在/opt下，cdh5的源会默认在/opt/cloudera/parcel-repo寻找，所以不能解压到其他地方，使用命令
+tar xzvf cloudera-manager*.tar.gz
+mv cloudera /opt/
+mv cm-5.15.2 /opt/
+这里开始我们的cm需要与mysql进行交互，所以首先需要去MySql的官网下载JDBC驱动，http://dev.mysql.com/downloads/connector/j/，解压后找到mysql-connector-java-5.1.**-bin.jar，放到/opt/cm-5.15.2/share/cmf/lib/中，不多赘述。
+
+在主节点初始化CM5的数据库：
+/opt/cm-5.15.2/share/cmf/schema/scm_prepare_database.sh mysql cm -hhadoop01 -uroot -proot --scm-host hadoop01 scm scm scm
+
+
+
+Agent配置
+/opt/cm-5.15.2/etc/cloudera-scm-agent/config.ini中的server_host为主节点的主机名为hadoop01。
+vi /opt/cm-5.15.2/etc/cloudera-scm-agent/config.ini
+同步Agent到其他节点
+
+
+在所有节点创建cloudera-scm用户
+useradd --system --home=/opt/cm-5.15.2/run/cloudera-scm-server --no-create-home --shell=/bin/false --comment "Cloudera SCM User" cloudera-scm
+
+
+准备Parcels，用以安装CDH5
+
+将我们提前下载好的Parcels文件上传到主节点的/opt/cloudera/parcel-repo/目录中（如果没有parcel-repo需要手动创建，这里不需要分发到所有节点）。
+
+注意！！最后一定要将CDH-5.12.1-1.cdh5.12.1.p0.3-el6.parcel.sha1，重命名为CDH-5.12.1-1.cdh5.12.1.p0.3-el6.parcel.sha，去掉末尾的1，否则系统会重新下载CDH-5.12.1-1.cdh5.12.1.p0.3-el6.parcel文件，也就不是纯离线安装了。
+
+
+
+通过启动服务端。
+/opt/cm-5.15.2/etc/init.d/cloudera-scm-server restart
+
+通过启动Agent服务（所有Agent节点）
+/opt/cm-5.15.2/etc/init.d/cloudera-scm-agent restart
+
+
+
+service服务启动需要几分钟，取决于服务器的性能，此时我们可以使用
+
+netstat -apn|grep 7180
+
+
+在页面执行之前 copy mysql 的 jdbc 驱动到hive和oozie
+cp /home/tools/mysql/mysql-connector-java-5.1.47-bin.jar /opt/cloudera/parcels/CDH-5.15.2-1.cdh5.15.2.p0.3/lib/hive/lib/
+scp /opt/cloudera/parcels/CDH-5.15.2-1.cdh5.15.2.p0.3/lib/hive/lib/mysql-connector-java-5.1.47-bin.jar   hadoop02:/opt/cloudera/parcels/CDH-5.15.2-1.cdh5.15.2.p0.3/lib/hive/lib
+scp /opt/cloudera/parcels/CDH-5.15.2-1.cdh5.15.2.p0.3/lib/hive/lib/mysql-connector-java-5.1.47-bin.jar   hadoop03:/opt/cloudera/parcels/CDH-5.15.2-1.cdh5.15.2.p0.3/lib/hive/lib
+
+cp /home/tools/mysql/mysql-connector-java-5.1.47-bin.jar    /var/lib/oozie/mysql-connector-java.jar
+scp /var/lib/oozie/mysql-connector-java.jar  hadoop02:/var/lib/oozie
+scp /var/lib/oozie/mysql-connector-java.jar  hadoop03:/var/lib/oozie
+
+
+
+12. 在页面配置namenode HA（高可用）
+HDFS --> 操作 --> 启用 High Availability
+
+
+13. 修改hue配置
+hue的时区修改  time_zone 
+American/LosAngeles，这个时区设置使得hue oozie dashboard中任务的时间显示不能与中国标准时间一致，将其改为Asia/Shanghai，重启hue服务即可。
+
+
+14. oozie配置（hadoop02 为 oozie server）
+
+oozie使用UTC时区，UTC是世界标准时间，指的是零时区（英国格林尼治天文台旧址）里的时间。中国所在的时区为东八区，所以中国的时间应该是UTC时间加上8个小时，即常见的UTC+8时间。
+在cloudera oozie配置–>Oozie Server Default Group –>高级–>oozie-site.xml 的 Oozie Server 高级配置代码段（安全阀） 添加
+<property>
+    <name>oozie.processing.timezone</name>
+     <value>GMT+0800</value>
+</property>
+
+
+15. oozie 缺少 ext-2.2 
+下载地址：http://archive.cloudera.com/gplextras/misc/ext-2.2.zip
+解压到目录下(oozie服务器上)：
+/var/lib/oozie/
+
+
+
+16. sqoop-site.xml 中添加如下配置（CM页面：sqoop-conf/sqoop-site.xml 的 Sqoop 1 Client 客户端高级配置代码段（安全阀））：
+<property>
+    <name>sqoop.metastore.client.record.password</name>
+    <value>true</value>
+    <description>If true, allow saved passwords in the metastore.
+    </description>
+</property>
+
+
+17.检查 HDFS 权限(dfs.permissions)
+HDFS（服务范围）  勾选去掉
+
+18.vi /etc/httpd/conf/httpd.conf
+#ServerName www.example.com:80  修改为  ServerName localhost:80
+
+
+19.hue配置
+无法为用户hue创建主目录， 无法为用户hadoop创建主目录，无法为用户hdfs创建主目录。
+HDFS --> 配置 -->  core-site.xml 的群集范围高级配置代码段（安全阀）
+添加以下配置：
+<property>
+        <name>hadoop.proxyuser.hue.hosts</name>
+        <value>*</value>
+    </property>
+    <property>
+        <name>hadoop.proxyuser.hue.groups</name>
+        <value>*</value>
+    </property>
+
+
+20.kafka安装配置
+将kafka的 以下3个 parcel包放到cm安装节点下的 /opt/cloudera/parcel-repo
+KAFKA-4.1.0-1.4.1.0.p0.4-el7.parcel  
+KAFKA-4.1.0-1.4.1.0.p0.4-el7.parcel.sha
+manifest.json （重名，把旧的重命名）
+
+页面配置：主机 --> Parcel --> KAFKA(左侧栏) --> 分配/激活
+
+主页 --> 添加服务  -->  kafka  -->  kafka broker(选择所有节点) --> kafka monitiormaker (选择一个或者不选都行)
+
+配置：
+zookeeper.chroot ：/kafka
+broker.id  每个节点配置不同即可
+bootstrap.servers ： hadoop01:9092,hadoop02:9092,hadoop03:9092   （配置3个即可）
+source.bootstrap.servers： hadoop01:9092,hadoop02:9092,hadoop03:9092  （所有节点配置）
+whitelist：hadoop01:9092   （配置1个即可，如果添加服务的时候没有添加kafka monitiormaker服务，则不需要 配置该项）
+
+启动服务ok
+
+
+21.phoenix安装配置
+下载phoenix的parcels安装包
+http://archive.cloudera.com/cloudera-labs/phoenix/parcels/latest/
+
+下载完成后上传下面3个文件到 /opt/cloudera/parcel-repo 目录下
+CLABS_PHOENIX-4.7.0-1.clabs_phoenix1.3.0.p0.000-el7.parcel
+CLABS_PHOENIX-4.7.0-1.clabs_phoenix1.3.0.p0.000-el7.parcel.sha
+manifest.json  （重名，把旧的重命名）
+
+页面配置：主机 --> Parcel --> 配置(右上角) --> 远程 Parcel 存储库 URL (添加：http://archive.cloudera.com/cloudera-labs/phoenix/parcels/latest/) --> 保存更改 --> CLABS_PHOENIX(左侧栏) --> 分配/激活
+
+重启hbase服务
+进入phoenix shell窗口：
+phoenix-sqlline.py hadoop01,hadoop02,hadoop03:2181
+
+
+
+
+
+维护：
+清理Service Monitor和Host Monitor 的日志
+清理之后 重启Service Monitor和Host Monitor
+hadoop01:
+rm -rf /var/lib/cloudera-host-monitor/ts/*/partition*/*
+rm -rf /var/lib/cloudera-service-monitor/ts/*/partition*/*
+
+#yarn缓存jar
+rm -rf /yarn/nm/usercache/hadoop/filecache/*
+rm -rf /yarn/nm/usercache/*/filecache/*
+
+# cm的日志目录
+#hadoop01:
+echo ""  > /opt/cm-5.15.2/log/cloudera-scm-server/cloudera-scm-server.log
+rm -rf /opt/cm-5.15.2/log/cloudera-scm-server/cloudera-scm-server.log.*
+
+#所有节点
+echo ""  > /opt/cm-5.15.2/log/cloudera-scm-agent/cloudera-scm-agent.log
+echo ""  > /opt/cm-5.15.2/log/cloudera-scm-agent/cloudera-scm-agent.out
+rm -rf /opt/cm-5.15.2/log/cloudera-scm-agent/cloudera-scm-agent.log.*
+
+# 集群的日志
+/var/log
+rm -rf /var/log/hadoop-hdfs/hadoop-cmf-hdfs-NAMENODE-hadoop*.log.out.*
+echo "" > /var/log/hadoop-hdfs/hdfs-audit.log
+#hadoop01
+rm -rf /var/log/cloudera-scm-firehose/mgmt-cmf-mgmt*.log.out.*
+
+impala刷新元数据：
+
+INVALIDATE METADATA;                   //重新加载所有库中的所有表
+INVALIDATE METADATA [table]            //重新加载指定的某个表
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+安装pssh
+1.安装pip
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py   # 下载安装脚本
+sudo python get-pip.py    # 运行安装脚本
+
+pip --version
+
+2.安装pssh
+pip install pssh	
+
+3.设置hosts 目录
+在 /home/hadoop/dev/parm 目下创建全部节点文件和除了主节点外的全部host文件
+vi host_all.list
+vi host_slaves.list
+
+4.上传 dh_prsync.sh  dh_pscp.sh  dh_pssh.sh 到 /home/hadoop/dev/shell
+
+5.做软连接：
+ln -s /home/hadoop/dev/shell/dh_pssh.sh /usr/bin/dh_pssh
+ln -s /home/hadoop/dev/shell/dh_pscp.sh /usr/bin/dh_pscp
+ln -s /home/hadoop/dev/shell/dh_prsync.sh /usr/bin/dh_prsync
+
+6.将 V_SHELL_HOME 加入全局环境变量
+vi /etc/profile
+添加： 
+export V_HOME=/home/hadoop/dev
+export PATH=$PATH:${MYSQL_HOME}/bin:${MAVEN_HOME}/bin:${V_HOME}/shell
+
+
+7.source /etc/profile
+
+8.pip 更新
+python -m pip install --upgrade pip
+
+9.安装 Jupyter
+python -m pip install jupyter
+(1)pip install numpy
+(2)cd  /home/tools/numpy-1.11.2
+   python setup.py install
+
+进入python：
+import numpy
+from numpy import *
+
+测试：eye(4)
+
+
+在 /usr/lib/python2.7/site-packages/traitlets/config/application.py 文件，在import后增加下面几行：
+if sys.getdefaultencoding() != 'utf-8':
+    reload(sys)
+    sys.setdefaultencoding('utf-8')
+
+启动 jupyter：
+LANG=zn jupyter-notebook --ip 192.168.1.72
+
+
+导入 py4j：
+import os
+import sys
+spark_name = os.environ.get('SPARK_HOME',None)
+print(spark_name)
+if not spark_name:
+    raise ValueErrorError('spark环境没有配置好')
+sys.path.insert(0,os.path.join(spark_name,'python'))
+sys.path.insert(0,os.path.join(spark_name,'python/lib/py4j-0.10.7-src.zip'))
+exec(open(os.path.join(spark_name,'python/pyspark/shell.py')).read())
+
+
+
+
+
